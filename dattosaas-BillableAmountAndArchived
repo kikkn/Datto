@@ -1,48 +1,89 @@
-#Fill inn ur dattobase URI https://api.datto.com/v1 is default one
+#fill in dattobaseuri, apikey and webhookurl.
+#https://portal.dattobackup.com/integrations/api for api creation
 Add-DattoBaseURI -base_uri "https://api.datto.com/v1"
-#fill in ur dattoapikey create urs here: https://portal.dattobackup.com/integrations/api
 Add-DattoAPIKey -Api_Key_Public "apikeypublic" -Api_Key_Secret "apikeysecret"
+$WebhookUrl = "addurwebhookurl"
+
+# Function to send message to Teams
+function Send-TeamsMessage {
+    param (
+        [string]$Message
+    )
+
+    $body = @{
+        text = $Message
+    } | ConvertTo-Json
+
+    $response = Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $body -ContentType "application/json; charset=utf-8"
+}
+
+# Initialize variable to store the result
+$result = @()
 
 # Retrieve a list of customers using Get-DattoSaaS
-$customers = get-DattoSaas | select saascustomername,saascustomerid,domain
+$customers = Get-DattoSaaS | Select-Object saascustomername, saascustomerid, domain
 
 # Check if customers were retrieved successfully
 if ($customers) {
     foreach ($customer in $customers) {
         Write-Host "Processing customer: $($customer.saascustomername)"
 
+        # Initialize message for this customer
+        $customerMessage = "Customer: $($customer.saascustomername)`n"
+
         # Retrieve details for each customer using Get-DattoSeat
-        $customerDetails = Get-DattoSeat -saascustomerid $customer.saasCustomerId
+        $customerDetails = Get-DattoSeat -saascustomerid $customer.saascustomerid
 
         # Check if details were retrieved successfully
         if ($customerDetails) {
             Write-Host "Details for $($customer.saascustomername):"
 
-             # Count the number of billable licenses
+            # Seperator
+            $customerMessage += "--------------------------------------`n"
+
+            # Count the number of billable licenses
             $billableLicenses = ($customerDetails | Where-Object { $_.Billable -eq "1"}).Count
-            Write-Host "Number of billable licenses used: $billableLicenses" -ForegroundColor Green
-        } else {
-            Write-Host "Failed to retrieve details for $($customer.saascustomername)"
-        }
-            
-            # Add a blank line for separation
-            Write-Host "" 
+            $customerMessage += "Number of billable licenses used: $billableLicenses`n"
+
+            # Seperator
+            $customerMessage += "--------------------------------------`n"
 
             # Filter for archived users
-            $archivedUsers = $customerDetails | Where-Object { ($_.seattype -eq "User") -and ($_.seatstate -eq "archived") } | Select-Object name,mainid,seatstate,billable
+            $archivedUsers = $customerDetails | Where-Object { ($_.seattype -eq "User") -and ($_.seatstate -eq "archived") } | Select-Object name, mainid, seatstate, billable
 
-            # Output archived user details
+            # Count the number of archived users
+            $numArchivedUsers = $archivedUsers.Count
+
+            # Output archived user details in a table format
             if ($archivedUsers) {
-                $archivedUsers | select name,mainid,seatstate,billable
-
+                $customerMessage += "Archived users found: ($numArchivedUsers)`n"
+                $archivedUsersTable = $archivedUsers | Format-Table -AutoSize | Out-String
+                $customerMessage += $archivedUsersTable
             } else {
-                Write-Host "No archived users found for $($customer.saascustomername)" -ForegroundColor Green
+                $customerMessage += "No archived users found.`n"
             }
-                  
+        } else {
+            $customerMessage += "Failed to retrieve details.`n"
+        }
+
+        # Add the customer message to the result
+        $result += $customerMessage
+
+        # Send the accumulated message for this customer to Teams
+        Send-TeamsMessage -Message $customerMessage
 
         # Add a separator between customers for better readability
         Write-Host "--------------------------------------"
     }
 } else {
-    Write-Host "No customers found."
+    $message = "No customers found."
+    Write-Host $message
+     # Send message to Teams
+    Send-TeamsMessage -Message $message
+
+    # Add the message to the result
+    $result += $message
 }
+
+# Output the result
+$result
