@@ -1,0 +1,48 @@
+#Fill inn ur dattobase URI https://api.datto.com/v1 is default one
+Add-DattoBaseURI -base_uri "https://api.datto.com/v1"
+#fill in ur dattoapikey create urs here: https://portal.dattobackup.com/integrations/api
+Add-DattoAPIKey -Api_Key_Public "apikeypublic" -Api_Key_Secret "apikeysecret"
+
+# Retrieve a list of customers using Get-DattoSaaS
+$customers = get-DattoSaas | select saascustomername,saascustomerid,domain
+
+# Check if customers were retrieved successfully
+if ($customers) {
+    foreach ($customer in $customers) {
+        Write-Host "Processing customer: $($customer.saascustomername)"
+
+        # Retrieve details for each customer using Get-DattoSeat
+        $customerDetails = Get-DattoSeat -saascustomerid $customer.saasCustomerId
+
+        # Check if details were retrieved successfully
+        if ($customerDetails) {
+            Write-Host "Details for $($customer.saascustomername):"
+
+             # Count the number of billable licenses
+            $billableLicenses = ($customerDetails | Where-Object { $_.Billable -eq "1"}).Count
+            Write-Host "Number of billable licenses used: $billableLicenses" -ForegroundColor Green
+        } else {
+            Write-Host "Failed to retrieve details for $($customer.saascustomername)"
+        }
+            
+            # Add a blank line for separation
+            Write-Host "" 
+
+            # Filter for archived users
+            $archivedUsers = $customerDetails | Where-Object { ($_.seattype -eq "User") -and ($_.seatstate -eq "archived") } | Select-Object name,mainid,seatstate,billable
+
+            # Output archived user details
+            if ($archivedUsers) {
+                $archivedUsers | select name,mainid,seatstate,billable
+
+            } else {
+                Write-Host "No archived users found for $($customer.saascustomername)" -ForegroundColor Green
+            }
+                  
+
+        # Add a separator between customers for better readability
+        Write-Host "--------------------------------------"
+    }
+} else {
+    Write-Host "No customers found."
+}
